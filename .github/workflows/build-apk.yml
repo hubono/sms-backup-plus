@@ -2,7 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [ master ]
   workflow_dispatch:
 
 jobs:
@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -18,19 +18,33 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
+          cache: 'gradle'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Make gradlew executable
+      - name: Make Gradle Wrapper Executable
         run: chmod +x ./gradlew
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace
 
+      - name: Sign APK
+        run: |
+          # Create a debug signing keystore
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+
+          # Locate apksigner from the pre-installed Android SDK tools
+          BUILD_TOOLS_PATH=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
+          APK_FILE=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
+
+          # Sign using APK Signature Schemes (v2 and v3)
+          $BUILD_TOOLS_PATH/apksigner sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android --out sms-backup-plus-signed.apk "$APK_FILE"
+
+          # Verify the signature
+          $BUILD_TOOLS_PATH/apksigner verify --verbose sms-backup-plus-signed.apk
+
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: sms-backup-plus-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
-          retention-days: 14
+          name: sms-backup-plus-signed-apk
+          path: sms-backup-plus-signed.apk
+          if-no-files-found: error
+          
